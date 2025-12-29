@@ -1,28 +1,60 @@
 from fastapi import FastAPI
 import os
+import ast
 
 app = FastAPI()
 
-# Ali Bulut'un istediği JSON yapısını manuel hazırlayan fonksiyon
+# 1. ANALİZ ZEKASI: Dosyanın içine bakıp hata arayan fonksiyon
+def analyze_code(file_path):
+    """Python dosyalarında gerçek yazım hatalarını bulur."""
+    if not file_path.endswith(".py"):
+        return [] # Şimdilik sadece Python dosyalarını analiz ediyoruz
+        
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            code = f.read()
+            ast.parse(code) # Python kodunu gramer olarak kontrol eder
+            return [] # Hata yoksa boş liste
+    except SyntaxError as e:
+        # Eğer bir parantez unutulmuşsa veya yazım yanlışı varsa burası çalışır
+        return [{
+            "line": e.lineno,
+            "message": f"Yazım Hatası: {e.msg}",
+            "severity": "high"
+        }]
+    except Exception as e:
+        return [{"line": 0, "message": str(e), "severity": "medium"}]
+
+# 2. FORMATLAYICI: Ali Bulut'un "Altın Kuralı" (camelCase ve JSON yapısı)
 def format_node(entry):
+    # Dosya yolunu al ve analiz et
+    errors = []
+    status = "pending"
+    
+    if entry.is_file() and entry.name.endswith(".py"):
+        errors = analyze_code(entry.path)
+        status = "completed" if not errors else "error"
+
     return {
         "id": entry.path,
         "name": entry.name,
         "type": "folder" if entry.is_dir() else "file",
-        "status": "pending",
+        "status": status,
+        "errors": errors, # Bulunan hataları buraya ekliyoruz
         "children": []
     }
 
+# 3. ENDPOINTLER (API Uç Noktaları)
 @app.get("/")
 async def root():
-    return {"message": "Sistem Hazır", "url": "/files"}
+    return {"message": "AI Code Analyzer Sistemi Hazır", "status": "active"}
 
 @app.get("/files")
 async def list_files():
     root_path = "." 
     file_tree = []
     
-    # Dosyaları tara ve listele
+    # Dosyaları tara, filtrele ve analiz et
     for entry in os.scandir(root_path):
         if entry.name.startswith(('.', 'venv', '__pycache__')):
             continue
@@ -30,19 +62,12 @@ async def list_files():
         
     return file_tree
 
-# Maildeki 2. madde: Hata örneği (Simülasyon)
-@app.get("/test-error")
-async def get_test_error():
+# Maildeki hata akışı simülasyonu için özel test ucu
+@app.get("/scan-report")
+async def get_scan_report():
     return {
-        "event": "error_found",
-        "data": {
-            "fileId": "main.py",
-            "errors": [
-                {
-                    "line": 10,
-                    "message": "AI Simülasyonu: Potansiyel hata bulundu.",
-                    "severity": "high"
-                }
-            ]
-        }
+        "event": "scan_completed",
+        "scanner_version": "1.0.0",
+        "results": await list_files()
     }
+if
